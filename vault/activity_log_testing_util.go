@@ -8,6 +8,34 @@ import (
 	"github.com/hashicorp/vault/vault/activity"
 )
 
+// InjectActivityLogDataThisMonth populates the in-memory client store
+// with some entities and tokens, overriding what was already there
+// It is currently used for API integration tests
+func (c *Core) InjectActivityLogDataThisMonth(t *testing.T) (map[string]struct{}, map[string]uint64) {
+	t.Helper()
+
+	activeEntities := map[string]struct{}{
+		"entity0": struct{}{},
+		"entity1": struct{}{},
+		"entity2": struct{}{},
+	}
+	tokens := map[string]uint64{
+		"ns0": 5,
+		"ns1": 1,
+		"ns2": 10,
+	}
+
+	c.activityLog.l.Lock()
+	defer c.activityLog.l.Unlock()
+	c.activityLog.fragmentLock.Lock()
+	defer c.activityLog.fragmentLock.Unlock()
+
+	c.activityLog.activeEntities = activeEntities
+	c.activityLog.currentSegment.tokenCount.CountByNamespaceID = tokens
+
+	return activeEntities, tokens
+}
+
 // Return the in-memory activeEntities from an activity log
 func (c *Core) GetActiveEntities() map[string]struct{} {
 	out := make(map[string]struct{})
@@ -163,4 +191,17 @@ func (a *ActivityLog) SetEnable(enabled bool) {
 	a.fragmentLock.Lock()
 	defer a.fragmentLock.Unlock()
 	a.enabled = enabled
+}
+
+// GetEnabled returns the enabled flag on an activity log
+func (a *ActivityLog) GetEnabled() bool {
+	a.fragmentLock.RLock()
+	defer a.fragmentLock.RUnlock()
+	return a.enabled
+}
+
+// GetActivityLog returns a pointer to the (private) activity log on a core
+// Note: you must do the usual locking scheme when modifying the ActivityLog
+func (c *Core) GetActivityLog() *ActivityLog {
+	return c.activityLog
 }
