@@ -85,11 +85,11 @@ const (
 	// flagnameCAPath is the flag used in the base command to read in the CA
 	// cert path.
 	flagNameCAPath = "ca-path"
-	//flagNameClientCert is the flag used in the base command to read in the
-	//client key
+	// flagNameClientCert is the flag used in the base command to read in the
+	// client key
 	flagNameClientKey = "client-key"
-	//flagNameClientCert is the flag used in the base command to read in the
-	//client cert
+	// flagNameClientCert is the flag used in the base command to read in the
+	// client cert
 	flagNameClientCert = "client-cert"
 	// flagNameTLSSkipVerify is the flag used in the base command to read in
 	// the option to ignore TLS certificate verification.
@@ -296,6 +296,16 @@ func initCommands(ui, serverCmdUi cli.Ui, runOpts *RunOptions) {
 				BaseCommand: getBaseCommand(),
 			}, nil
 		},
+		"license": func() (cli.Command, error) {
+			return &LicenseCommand{
+				BaseCommand: getBaseCommand(),
+			}, nil
+		},
+		"license get": func() (cli.Command, error) {
+			return &LicenseGetCommand{
+				BaseCommand: getBaseCommand(),
+			}, nil
+		},
 		"list": func() (cli.Command, error) {
 			return &ListCommand{
 				BaseCommand: getBaseCommand(),
@@ -334,6 +344,11 @@ func initCommands(ui, serverCmdUi cli.Ui, runOpts *RunOptions) {
 		},
 		"operator": func() (cli.Command, error) {
 			return &OperatorCommand{
+				BaseCommand: getBaseCommand(),
+			}, nil
+		},
+		"operator diagnose": func() (cli.Command, error) {
+			return &OperatorDiagnoseCommand{
 				BaseCommand: getBaseCommand(),
 			}, nil
 		},

@@ -112,7 +112,7 @@ export default Component.extend(FocusOnInsertMixin, WithNavToNearestAncestor, {
     'model.id',
     'mode'
   ),
-  canDelete: alias('model.canDelete'),
+  canDelete: alias('updatePath.canDelete'),
   canEdit: alias('updatePath.canUpdate'),
 
   v2UpdatePath: maybeQueryRecord(
@@ -197,6 +197,13 @@ export default Component.extend(FocusOnInsertMixin, WithNavToNearestAncestor, {
     if (key.startsWith('/')) {
       key = key.replace(/^\/+/g, '');
       secretData.set(secretData.pathAttr, key);
+    }
+
+    if (this.mode === 'create') {
+      key = JSON.stringify({
+        backend: secret.backend,
+        id: key,
+      });
     }
 
     return secretData
@@ -323,8 +330,14 @@ export default Component.extend(FocusOnInsertMixin, WithNavToNearestAncestor, {
         return;
       }
 
-      this.persistKey(() => {
-        this.transitionToRoute(SHOW_ROUTE, this.model.path || this.model.id);
+      this.persistKey(key => {
+        let secretKey;
+        try {
+          secretKey = JSON.parse(key).id;
+        } catch (error) {
+          secretKey = key;
+        }
+        this.transitionToRoute(SHOW_ROUTE, secretKey);
       });
     },
 

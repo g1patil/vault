@@ -381,6 +381,7 @@ func (d *Delegate) KnownServers() map[raft.ServerID]*autopilot.Server {
 		RaftVersion: raft.ProtocolVersionMax,
 		NodeStatus:  autopilot.NodeAlive,
 		Ext:         d.autopilotServerExt("voter"),
+		IsLeader:    true,
 	}
 
 	return ret
@@ -469,7 +470,7 @@ func (b *RaftBackend) startFollowerHeartbeatTracker() {
 	tickerCh := b.followerHeartbeatTicker.C
 	b.l.RUnlock()
 
-	for _ = range tickerCh {
+	for range tickerCh {
 		b.l.RLock()
 		if b.autopilotConfig.CleanupDeadServers && b.autopilotConfig.DeadServerLastContactThreshold != 0 {
 			b.followerStates.l.RLock()
