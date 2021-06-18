@@ -15,14 +15,13 @@ import (
 
 	"github.com/armon/go-metrics"
 	"github.com/golang/protobuf/proto"
-	"github.com/hashicorp/errwrap"
 	log "github.com/hashicorp/go-hclog"
 	wrapping "github.com/hashicorp/go-kms-wrapping"
 	"github.com/hashicorp/go-raftchunking"
 	"github.com/hashicorp/go-uuid"
 	"github.com/hashicorp/raft"
 	autopilot "github.com/hashicorp/raft-autopilot"
-	"github.com/hashicorp/raft-boltdb/v2"
+	raftboltdb "github.com/hashicorp/raft-boltdb/v2"
 	snapshot "github.com/hashicorp/raft-snapshot"
 	"github.com/hashicorp/vault/helper/metricsutil"
 	"github.com/hashicorp/vault/sdk/helper/consts"
@@ -219,7 +218,7 @@ func (b *RaftBackend) JoinConfig() ([]*LeaderJoinInfo, error) {
 	var leaderInfos []*LeaderJoinInfo
 	err := jsonutil.DecodeJSON([]byte(config), &leaderInfos)
 	if err != nil {
-		return nil, errwrap.Wrapf("failed to decode retry_join config: {{err}}", err)
+		return nil, fmt.Errorf("failed to decode retry_join config: %w", err)
 	}
 
 	if len(leaderInfos) == 0 {
@@ -238,7 +237,7 @@ func (b *RaftBackend) JoinConfig() ([]*LeaderJoinInfo, error) {
 		info.Retry = true
 		info.TLSConfig, err = parseTLSInfo(info)
 		if err != nil {
-			return nil, errwrap.Wrapf(fmt.Sprintf("failed to create tls config to communicate with leader node (retry_join index: %d): {{err}}", i), err)
+			return nil, fmt.Errorf("failed to create tls config to communicate with leader node (retry_join index: %d): %w", i, err)
 		}
 	}
 
@@ -804,7 +803,7 @@ func (b *RaftBackend) SetupCluster(ctx context.Context, opts SetupOpts) error {
 
 		recoveryConfig, err := raft.ReadConfigJSON(peersFile)
 		if err != nil {
-			return errwrap.Wrapf("raft recovery failed to parse peers.json: {{err}}", err)
+			return fmt.Errorf("raft recovery failed to parse peers.json: %w", err)
 		}
 
 		// Non-voting servers are only allowed in enterprise. If Suffrage is disabled,
@@ -819,12 +818,12 @@ func (b *RaftBackend) SetupCluster(ctx context.Context, opts SetupOpts) error {
 
 		err = raft.RecoverCluster(raftConfig, b.fsm, b.logStore, b.stableStore, b.snapStore, b.raftTransport, recoveryConfig)
 		if err != nil {
-			return errwrap.Wrapf("raft recovery failed: {{err}}", err)
+			return fmt.Errorf("raft recovery failed: %w", err)
 		}
 
 		err = os.Remove(peersFile)
 		if err != nil {
-			return errwrap.Wrapf("raft recovery failed to delete peers.json; please delete manually: {{err}}", err)
+			return fmt.Errorf("raft recovery failed to delete peers.json; please delete manually: %w", err)
 		}
 		b.logger.Info("raft recovery deleted peers.json")
 	}
@@ -832,7 +831,7 @@ func (b *RaftBackend) SetupCluster(ctx context.Context, opts SetupOpts) error {
 	if opts.RecoveryModeConfig != nil {
 		err = raft.RecoverCluster(raftConfig, b.fsm, b.logStore, b.stableStore, b.snapStore, b.raftTransport, *opts.RecoveryModeConfig)
 		if err != nil {
-			return errwrap.Wrapf("recovering raft cluster failed: {{err}}", err)
+			return fmt.Errorf("recovering raft cluster failed: %w", err)
 		}
 	}
 
@@ -857,7 +856,7 @@ func (b *RaftBackend) SetupCluster(ctx context.Context, opts SetupOpts) error {
 			case <-ctx.Done():
 				future := raftObj.Shutdown()
 				if future.Error() != nil {
-					return errwrap.Wrapf("shutdown while waiting for leadership: {{err}}", future.Error())
+					return fmt.Errorf("shutdown while waiting for leadership: %w", future.Error())
 				}
 
 				return errors.New("shutdown while waiting for leadership")
@@ -981,6 +980,39 @@ func (b *RaftBackend) RemovePeer(ctx context.Context, peerID string) error {
 
 	b.logger.Trace("removing server from raft via autopilot", "id", peerID)
 	return b.autopilot.RemoveServer(raft.ServerID(peerID))
+}
+
+// GetConfigurationOffline is used to read the stale, last known raft
+// configuration to this node. It accesses the last state written into the
+// FSM. When a server is online use GetConfiguration instead.
+func (b *RaftBackend) GetConfigurationOffline() (*RaftConfigurationResponse, error) {
+	b.l.RLock()
+	defer b.l.RUnlock()
+
+	if b.raft != nil {
+		return nil, errors.New("raft storage is initialized, used GetConfiguration instead")
+	}
+
+	if b.fsm == nil {
+		return nil, nil
+	}
+
+	state, configuration := b.fsm.LatestState()
+	config := &RaftConfigurationResponse{
+		Index: state.Index,
+	}
+	for _, server := range configuration.Servers {
+		entry := &RaftServer{
+			NodeID:  server.Id,
+			Address: server.Address,
+			// Since we are offline no node is the leader.
+			Leader: false,
+			Voter:  raft.ServerSuffrage(server.Suffrage) == raft.Voter,
+		}
+		config.Servers = append(config.Servers, entry)
+	}
+
+	return config, nil
 }
 
 func (b *RaftBackend) GetConfiguration(ctx context.Context) (*RaftConfigurationResponse, error) {
